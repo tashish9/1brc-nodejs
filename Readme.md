@@ -26,3 +26,14 @@ Tried using readFile and readFileSync , first of all , reading whole 13GB at onc
   averageRowsPerChunk: 4751.571256193383
 }
 ```
+
+### Step 2 : Average Calculation Method
+
+- Updating average on every iteration seems like bad idea. so i add sum to the object and calculating averages now in `on("end")` , even though the overall program took more time , i think it's still fine , here we are iterating over all the data and adding one field to each object , which can be emitted at the time of writing to results file
+- Removed the `processingData` object , seemed bit unnecessary
+- Also the windows `Measure-Command` was good , but it was non responsive for straight 10 mins+ which makes me judge my life, so i just calculate overall time by using `performance.now` instead , where i also added percentage log in `.on("data")` -> `console.log(`${processRows / 10000000}%`);`. Now i can stare as random 8 digit logs for 12 mins straight.
+- Total time after these changes = 763100.61ms, which is 12 minutes,43 seconds, and 101 milliseconds. Amazing!!
+
+## References
+
+1. A basic loops benchmark i ran on jsben.ch -> https://jsben.ch/Fw159
