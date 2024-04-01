@@ -1,44 +1,73 @@
+import { Worker } from "worker_threads";
 import fs from "fs";
 
-const obj = {};
+const filePath = "../../measurements.txt";
+const fileSize = fs.statSync(filePath).size;
+const numberOfWorkers = 8;
+const chunkSize = Math.ceil(fileSize / numberOfWorkers);
+// const chunkSize = (end - start) / (1024 * 1024); // in MBs
+
+const cityData = {};
+const workers = []; // Store worker instances
+console.log(`spawning ${numberOfWorkers} workers`);
+console.log(`Each worker processing ${chunkSize / (1024 * 1024)}MBs of data`);
 const t0 = performance.now();
-let processRows = 0;
 
-fs.createReadStream("../../measurements.txt")
-  .on("data", (data) => {
-    const rows = data.toString().split("\n");
-    const n = rows.length;
-    processRows += n;
+for (let i = 0; i < numberOfWorkers; i++) {
+  const start = i * chunkSize;
+  const end = Math.min((i + 1) * chunkSize, fileSize);
 
-    for (let i = 0; i < n; i++) {
-      const [cityName, tempStr] = rows[i].split(";");
-      const currTemp = parseFloat(tempStr);
+  const worker = new Worker("./worker.js", {
+    workerData: { start, end, filePath },
+  });
 
-      if (obj[cityName]) {
-        obj[cityName].min = Math.min(obj[cityName].min, currTemp);
-        obj[cityName].max = Math.max(obj[cityName].max, currTemp);
-        obj[cityName].sum += currTemp;
-        obj[cityName].count++;
+  workers.push(worker); // Store the worker instance
+
+  worker.on("message", ({ obj, error }) => {
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    for (const city in obj) {
+      if (cityData[city]) {
+        cityData[city].min = Math.min(cityData[city].min, obj[city].min);
+        cityData[city].max = Math.max(cityData[city].max, obj[city].max);
+        cityData[city].sum += obj[city].sum;
+        cityData[city].count += obj[city].count;
       } else {
-        obj[cityName] = {
-          min: currTemp,
-          max: currTemp,
-          sum: currTemp,
-          count: 1,
-        };
+        cityData[city] = { ...obj[city] };
       }
     }
-    console.log(`${processRows / 10000000}%`);
-  })
-  .on("error", (err) => {
-    console.error(err);
-  })
-  .on("end", () => {
-    // Calculate averages
-    for (const city in obj) {
-      obj[city].avg = obj[city].sum / obj[city].count;
-    }
+  });
 
+  worker.on("error", (err) => {
+    console.error(err);
+  });
+}
+
+// Wait for all workers to finish processing
+Promise.all(
+  workers.map((worker) => {
+    return new Promise((resolve, reject) => {
+      worker.on("exit", (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Worker stopped with exit code ${code}`));
+        }
+      });
+    });
+  }),
+)
+  .then(() => {
+    // Calculate averages
+    // for (const city in cityData) {
+    //   cityData[city].avg = cityData[city].sum / cityData[city].count;
+    // }
     console.log(`Total time consumed - ${performance.now() - t0} milliseconds`);
     process.exit();
+  })
+  .catch((err) => {
+    console.error(err);
   });
